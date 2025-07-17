@@ -1,0 +1,10 @@
+name: Shared Github Pages
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  shared-job:
+    uses: steviexo/shared-workflows/.github/workflows/pages.yml@main

@@ -1,0 +1,10 @@
+name: Shared PDF-Docs
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  shared-job:
+    uses: steviexo/shared-workflows/.github/workflows/pdf-docs.yml@main

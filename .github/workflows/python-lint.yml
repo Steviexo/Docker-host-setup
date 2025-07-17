@@ -1,0 +1,10 @@
+name: Shared Python Lint
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  shared-job:
+    uses: steviexo/shared-workflows/.github/workflows/python-lint.yml@main

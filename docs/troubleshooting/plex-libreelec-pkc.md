@@ -1,5 +1,13 @@
 # Troubleshooting: Plex + LibreELEC + PlexKodiConnect
 
+## Einordnung
+
+Diese Datei sammelt wiederverwendbare Prüf- und Debug-Schritte für Probleme zwischen Plex, Docker, NAS-Storage und LibreELEC/PKC als Client.
+
+Der Fokus liegt auf reproduzierbaren Prüfpfaden statt auf einmaligen Ad-hoc-Lösungen.
+
+---
+
 ## Symptom: Plex-Bibliothek bleibt leer
 
 ### Host-Mount prüfen
@@ -33,7 +41,7 @@ docker exec -it plex /bin/sh -c 'su -s /bin/sh abc -c "cd /media && pwd && ls"'
 docker exec -it plex /bin/sh -c 'tail -n 200 "/config/Library/Application Support/Plex Media Server/Logs/Plex Media Server.log"'
 ```
 
-Wenn dort `Permission denied` für `/media/...` auftaucht, den Root des NFS-Shares und dessen Berechtigungen auf dem NAS prüfen.
+Wenn dort `Permission denied` für `/media/...` auftaucht, den Root des NFS-Shares und dessen effektive Berechtigungen auf dem NAS prüfen.
 
 ---
 
@@ -79,7 +87,16 @@ In diesem Setup funktionierte am Ende:
 
 Wenn die manuelle Verbindung per IP mit SSL-Fehlern scheitert, zunächst lokal per HTTP testen.
 
-Grund:
+### Hintergrund
 
-* Zertifikate validieren gegen rohe lokale IPs oft nicht sauber
-* im vertrauenswürdigen lokalen Netz ist HTTP hier ausreichend pragmatisch
+* Zertifikate validieren gegen rohe lokale IPs oft nicht sauber.
+* Im vertrauenswürdigen lokalen Netz ist HTTP in diesem konkreten Fall die pragmatische und funktionierende Variante.
+
+---
+
+## Grundsätzliche Hinweise
+
+* Nicht nur prüfen, ob ein Verzeichnis als `root` sichtbar ist, sondern ob der tatsächliche Service-Prozess Zugriff hat.
+* Server- und Client-Probleme sauber trennen.
+* Nach Migrationen immer mit Altlasten auf Clientseite rechnen.
+* Logs sind hilfreicher als Vermutungen, sobald Mounts, Netzwerkpfade und Container grundsätzlich erreichbar wirken.

@@ -59,21 +59,6 @@ Docker-host-setup/
 Der HP EliteDesk dient unter anderem als Host für den lokalen Plex Media Server.
 Die Mediendateien liegen auf der Synology-NAS und werden per NFS auf dem Host eingebunden. Plex läuft in einem Container und stellt die Bibliotheken für lokale Clients wie LibreELEC/Kodi mit PlexKodiConnect bereit.
 
-#### Kurzüberblick zum Setup
-
-- **Plex-Host:** HP EliteDesk (`192.168.88.106`)
-- **Storage:** Synology-NAS per NFS
-- **Host-Mount:** `/mnt/nas/media`
-- **Container-Mount:** `/media`
-- **Client:** Raspberry Pi 5 mit LibreELEC/Kodi + PlexKodiConnect
-
-#### Wichtige Hinweise
-
-- Der Root des NFS-Shares muss für den tatsächlichen Plex-Prozess traversierbar sein.
-- Der Blick als `root` im Container reicht für die Fehlersuche nicht aus, wenn Plex selbst als anderer Benutzer läuft.
-- Nach einer Migration des Plex-Servers können auf Clientseite Altlasten in PKC/Kodi zurückbleiben.
-- Die aktuell funktionierende PKC-Anbindung erfolgt manuell über `192.168.88.106:32400` per lokalem HTTP.
-
 **Relevante Dokumentation**
 
 * [`docs/services/plex-media-server.md`](docs/services/plex-media-server.md) – Beschreibung des Dienstes, der Architektur und der aktuell funktionierenden Anbindung

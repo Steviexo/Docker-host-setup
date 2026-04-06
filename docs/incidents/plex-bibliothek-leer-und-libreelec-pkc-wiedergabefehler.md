@@ -1,5 +1,16 @@
 # Incident: Plex-Bibliothek leer und LibreELEC/PKC-Wiedergabefehler
 
+## Einordnung
+
+Dieser Incident betrifft den Plex Media Server auf dem HP EliteDesk als Docker-Host sowie die Wiedergabe auf einem LibreELEC-Client mit PlexKodiConnect (PKC).
+
+Das Fehlerbild bestand aus zwei miteinander verknüpften, aber technisch getrennten Problemen:
+
+- Die Plex-Bibliotheken blieben trotz vorhandener Mediendateien leer.
+- Nach Behebung des Bibliotheksproblems scheiterte die Wiedergabe auf dem LibreELEC-Client weiterhin.
+
+---
+
 ## Kurzfassung
 
 Plex lief als Docker-Container auf dem HP EliteDesk (Ubuntu Server), die Film- und Serienbibliotheken blieben jedoch leer, obwohl die Mediendateien auf dem NAS lagen und per NFS auf dem Host eingebunden waren. Nachdem das Bibliotheksproblem behoben war, scheiterte die Wiedergabe auf dem LibreELEC-Client mit PlexKodiConnect (PKC) weiterhin.
@@ -289,24 +300,15 @@ pastekodi
 
 ## Lessons Learned
 
-1. **Der Blick als root im Container ist trügerisch.**
-   Nur weil `root` Dateien sehen kann, heißt das noch nicht, dass der eigentliche Plex-Prozess Zugriff hat.
-
-2. **Der Root des Shares ist genauso wichtig wie die Unterordner.**
-   Offene Rechte auf `Filme` und `Serien` bringen nichts, wenn `/media` selbst nicht traversierbar ist.
-
-3. **Eine Servermigration hinterlässt leicht Client-Geister.**
-   PKC/Kodi schleppte Altlasten aus dem früheren NAS-basierten Plex-Setup mit.
-
-4. **HTTPS per lokaler IP ist fehleranfällig.**
-   Im lokalen Netz funktionierte HTTP zuverlässig, während HTTPS per roher IP an der Zertifikatsprüfung scheiterte.
-
-5. **Server- und Client-Troubleshooting trennen.**
-   Erst den Bibliotheksscan auf Serverseite sauber herstellen, danach die Wiedergabe auf Clientseite angehen.
+* Der Blick als `root` im Container ist trügerisch.
+* Der Root des Shares ist genauso wichtig wie die Unterordner.
+* Eine Servermigration hinterlässt leicht Client-Geister.
+* HTTPS per lokaler IP ist fehleranfällig.
+* Server- und Client-Troubleshooting sollten getrennt betrachtet werden.
 
 ---
 
-## Follow-up / mögliche Verbesserungen
+## Follow-up
 
 * Film- und Serienbenennung weiter normalisieren, um das Matching von Metadaten zu verbessern.
 * Periodische Plex-Scans aktiviert lassen, da Netzwerk-Mounts Änderungen nicht immer sofort triggern.

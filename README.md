@@ -39,9 +39,9 @@ Je nach Service bestehen Anbindungen an weitere Systeme, z. B.:
 ```text
 Docker-host-setup/
 └── docs/
-    ├── 00-services/        → Service-Dokumentation
-    ├── 01-incidents/       → Konkrete Vorfälle mit Root-Cause-Analyse
-    └── 02-troubleshooting/ → Allgemeine Debugging-Methoden
+    ├── services/        → Service-Dokumentation
+    ├── incidents/       → Konkrete Vorfälle mit Root-Cause-Analyse
+    └── troubleshooting/ → Allgemeine Debugging-Methoden
 ````
 
 ### Bereiche

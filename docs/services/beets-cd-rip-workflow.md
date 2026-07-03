@@ -42,9 +42,10 @@ Ziel ist ein sauberer, reproduzierbarer und möglichst weit automatisierter Abla
   * `musictemp`
   * `musicincome`
   * `Musik`
-  * `_IMPORTED_DONE`
-  * `_MANUAL_REVIEW`
-  * `_FAILED_IMPORTS`
+  * `musicreview`
+    `_IMPORTED_DONE`
+    `_MANUAL_REVIEW`
+    `_FAILED_IMPORTS`
 
 ---
 
@@ -69,13 +70,13 @@ Ziel ist ein sauberer, reproduzierbarer und möglichst weit automatisierter Abla
   * `/mnt/nas/media/Musik`
 * Erfolgreich verarbeitete Restordner:
 
-  * `/mnt/nas/media/_IMPORTED_DONE`
+  * `/mnt/nas/media/music-review/_IMPORTED_DONE`
 * Manuelle Nachbearbeitung:
 
-  * `/mnt/nas/media/_MANUAL_REVIEW`
+  * `/mnt/nas/media/music-review/_MANUAL_REVIEW`
 * Technische Fehler:
 
-  * `/mnt/nas/media/_FAILED_IMPORTS`
+  * `/mnt/nas/media/music-review/_FAILED_IMPORTS`
 
 ### Im Beets-Container
 

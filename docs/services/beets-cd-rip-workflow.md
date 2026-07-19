@@ -124,6 +124,44 @@ whipper cd rip -p -k \
   --track-template "%A/%d/%t - %n" \
   --disc-template "%A/%d/%A - %d"
 ```
+ ### für kopiergeschützte oder von whipper fehlerhaft gerippte CDs
+   #### 1️⃣ **CD auf dem Mac rippen**
+
+   ##### **Option A: iMusic (schnell, m4a)**
+
+   - Rippt standardmäßig in **m4a (AAC, \~256 kbps)**.
+    - **Vorteil:** Umgeht Kopierschutz zuverlässig.
+
+   ##### **Option B: XLD (verlustfrei, FLAC/WAV)**
+
+   - Wähle **FLAC oder WAV** als Ausgabeformat.
+     - **Einstellungen:**
+       - **Rip-Modus:** Burst
+       - **Paranoia Mode:** None
+       - **Ausgabeformat:** FLAC oder WAV
+
+  #### 2️⃣ **Dateien auf das NAS übertragen**
+
+   ```bash
+   # Für FLAC/WAV-Dateien (XLD)
+   rsync -avz /Pfad/zu/gerippten/Dateien/ user@hp-elitedesk:/mnt/nas/media/musicincome/
+
+   # Für m4a-Dateien (iMusic)
+   rsync -avz /Pfad/zu/m4a/Dateien/ user@hp-elitedesk:/mnt/nas/media/musictemp/
+   ```
+
+  #### 3️⃣ **m4a → FLAC konvertieren (falls nötig)**
+
+   ```bash
+   # Einzelne Datei
+   ffmpeg -i input.m4a -c:a flac output.flac
+
+   # Alle m4a-Dateien in einem Ordner
+   find /mnt/nas/media/musictemp/ -name "*.m4a" -exec bash -c 'ffmpeg -i "$0" -c:a flac "${0%.m4a}.flac" && rm "$0"' {} \;
+   ```
+
+  - **Metadaten** werden automatisch beibehalten.
+  - **Qualität:** FLAC ist verlustfrei.
 
 ### 2. Auf dem HP prüfen, ob der Rip sichtbar ist
 

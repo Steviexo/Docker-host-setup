@@ -119,8 +119,8 @@ Nicht versehentlich auf dem Ubuntu-Rechner Pfade wie `/mnt/nas/media/...` verwen
 Empfohlener Aufruf:
 
 ```bash
-whipper cd rip -p -k \
-  -O /mnt/nas/musictemp \
+whipper cd rip -p -k -r 2 \
+  -O "$HOME/rip-local" \
   --track-template "%A/%d/%t - %n" \
   --disc-template "%A/%d/%A - %d"
 ```

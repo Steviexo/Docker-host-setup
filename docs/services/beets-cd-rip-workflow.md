@@ -442,6 +442,111 @@ Der Wrapper verbessert nicht die Lesbarkeit. Er setzt nur eine Obergrenze pro cd
 
 ---
 
+## 🍎 Workflow für kopiergeschützte oder fehlerhafte CDs auf dem Mac
+
+Manche älteren Audio-CDs besitzen absichtlich fehlerhafte oder nicht standardkonforme TOCs beziehungsweise zusätzliche Datensessions. Andere CDs sind schlicht stark zerkratzt. macOS, Apple Music und XLD sprechen Laufwerke teilweise anders an als Whipper unter Linux und können deshalb als zusätzlicher Rettungsweg nützlich sein.
+
+Dieser Weg „entfernt“ keinen Kopierschutz und garantiert keinen korrekten Rip. Entscheidend bleibt, ob das Ergebnis reproduzierbar ist oder durch AccurateRip bestätigt wird.
+
+### 1. CD auf dem Mac rippen
+
+#### Option A: Apple Music
+
+Apple Music eignet sich als unkomplizierter Fallback, wenn Whipper oder XLD die Disc nicht sauber verarbeiten. In den Importeinstellungen sollte nach Möglichkeit **Apple Lossless Encoder (ALAC)** gewählt werden.
+
+Empfohlene Einstellung:
+
+```text
+Musik → Einstellungen → Dateien → Importeinstellungen
+Importieren mit: Apple Lossless Encoder
+```
+
+Ein ALAC-Rip wird als `.m4a` gespeichert, ist aber verlustfrei. AAC sollte nur verwendet werden, wenn ALAC nicht funktioniert oder lediglich eine Hörkopie benötigt wird.
+
+Ein Apple-Music-Import besitzt normalerweise kein Whipper-/XLD-Log und keine eigene sichere Mehrfachlesung. Ohne zusätzliche Verifikation wird er daher zunächst als **unverifiziert** behandelt.
+
+#### Option B: XLD – bevorzugter Mac-Ripper
+
+Zuerst immer mit sicheren Einstellungen versuchen:
+
+- Ausgabeformat: `FLAC`, `ALAC` oder `WAV`
+- Rip-Modus: `XLD Secure Ripper`
+- AccurateRip: aktiviert
+- Logdatei: speichern
+- Laufwerksoffset: für das konkrete Mac-Laufwerk ermitteln und konfigurieren
+
+Wenn XLD im Secure-Modus ebenfalls dauerhaft hängt oder die Disc wegen einer ungewöhnlichen Struktur nicht verarbeiten kann, darf als letzter Rettungsversuch ein schnellerer Modus getestet werden:
+
+- Rip-Modus: `Burst`
+- Paranoia Mode: `None`
+
+Burst/None verzichtet auf einen wesentlichen Teil der Fehlerkorrektur und Mehrfachprüfung. Das Ergebnis ist nur dann als Archiv-Rip akzeptabel, wenn AccurateRip es bestätigt oder mehrere unabhängige Durchläufe identische Audiodaten ergeben. Andernfalls bleibt es eine gekennzeichnete Hörkopie.
+
+### 2. Ergebnis auf dem Mac einordnen
+
+| Ergebnis | Einstufung | Aktion |
+|---|---|---|
+| XLD + AccurateRip bestätigt alle Tracks | verifizierter Archiv-Rip | nach `musictemp` übertragen |
+| XLD Secure, reproduzierbare Prüfsummen, kein AccurateRip-Eintrag | manuelle Prüfung | Log aufheben und optional zweites Laufwerk testen |
+| XLD Burst/None ohne AccurateRip-Bestätigung | unverifizierte Rettungs-/Hörkopie | getrennt kennzeichnen |
+| Apple Music als ALAC ohne weitere Verifikation | verlustfrei, aber unverifiziert | manuell prüfen |
+| Apple Music als AAC | verlustbehaftete Hörkopie | Original-M4A behalten |
+
+### 3. Dateien auf den HP beziehungsweise das NAS übertragen
+
+Alle Mac-Rips gehen zunächst nach `musictemp` und nicht direkt nach `musicincome`:
+
+```bash
+rsync -a --partial --info=progress2 \
+  "/Pfad/zum/Albumordner/" \
+  "user@hp-elitedesk:/mnt/nas/media/musictemp/<ALBUMORDNER>/"
+```
+
+Alternativ kann bei direkt auf dem Mac eingebundener NAS-Freigabe in den entsprechenden `musictemp`-Ordner kopiert werden.
+
+Erst nach Prüfung von Format, Vollständigkeit und Rip-Status wird der Albumordner auf dem HP nach `musicincome` verschoben:
+
+```bash
+mv "/mnt/nas/media/musictemp/<ALBUMORDNER>" \
+   "/mnt/nas/media/musicincome/"
+```
+
+### 4. M4A richtig behandeln
+
+`.m4a` bezeichnet nur den Container. Darin kann verlustfreies **ALAC** oder verlustbehaftetes **AAC** stecken. Vor einer Konvertierung den Codec prüfen:
+
+```bash
+ffprobe -v error \
+  -select_streams a:0 \
+  -show_entries stream=codec_name \
+  -of default=noprint_wrappers=1:nokey=1 \
+  "input.m4a"
+```
+
+#### ALAC → FLAC
+
+Eine Konvertierung von ALAC zu FLAC bleibt verlustfrei:
+
+```bash
+ffmpeg -i "input.m4a" \
+  -map 0:a:0 \
+  -map_metadata 0 \
+  -c:a flac \
+  "output.flac"
+```
+
+Die Quelldatei erst löschen, nachdem die FLAC-Datei geprüft wurde. Cover-Art und einzelne Apple-spezifische Metadaten sollten anschließend kontrolliert werden.
+
+#### AAC → FLAC
+
+AAC kann technisch nach FLAC transkodiert werden, die bereits verlorenen Informationen werden dadurch aber nicht wiederhergestellt. Deshalb AAC-M4A möglichst unverändert behalten und nicht als verlustfreien Rip kennzeichnen.
+
+### 5. Import durch Beets
+
+Nach der manuellen Freigabe wird der Ordner nach `musicincome` verschoben. Das Polling-Skript übernimmt anschließend den regulären Beets-Import. Unverifizierte Rettungskopien sollten vorher eindeutig markiert oder nach `_MANUAL_REVIEW` gelegt werden.
+
+---
+
 ## Alternative Rip-Software
 
 ### Linux: Cyanrip

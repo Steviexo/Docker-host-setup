@@ -1,5 +1,7 @@
 # Beets / Whipper CD-Rip-Workflow
 
+> Stand: 22. Juli 2026
+
 ## Zweck
 
 Diese Dokumentation beschreibt den produktiven CD-Rip-Workflow für den Musikimport über **Whipper**, **Beets**, **Docker** und den **HP EliteDesk** als zentrale Import-Instanz.
@@ -7,37 +9,41 @@ Diese Dokumentation beschreibt den produktiven CD-Rip-Workflow für den Musikimp
 Ziele:
 
 - möglichst genaue und reproduzierbare CD-Rips
-- klare Trennung zwischen Rippen, Übertragen, Prüfen und Importieren
+- klare Trennung zwischen Rippen, Prüfen, Freigeben und Importieren
 - keine halbfertigen Rips im automatischen Beets-Eingang
 - problematische CDs kontrolliert behandeln, statt Prozesse stundenlang hängen zu lassen
+- unvollständige, aber bewusst akzeptierte Rips ohne Prüfschleife importieren
 - eindeutige Ablage für erfolgreiche Importe, manuelle Prüfung und technische Fehler
 
-Die Rollen bleiben klar getrennt:
+Die Rollen sind bewusst getrennt:
 
-- **Ubuntu-Rechner** = Rip-Station und lokaler Arbeitsbereich
-- **HP EliteDesk** = Quelle der Wahrheit für NAS-Sichtprüfung, Import und Automatisierung
-- **NAS** = zentrale Übergabe- und Musikablage
+- **MACiMessernix / Rip-Station** = CD lokal rippen, Log prüfen und fertigen Rip manuell freigeben
+- **HP EliteDesk** = Docker-Host, Beets-Datenbank, Importlogik, Polling und Cleanup
+- **NAS** = zentraler Eingang, Review-Bereich und produktive Musikbibliothek
 
 ---
 
 ## Architektur
 
-### Ubuntu-Rechner / Rip-Station
+### MACiMessernix / Rip-Station
 
 - rippt Audio-CDs primär mit `whipper`
-- schreibt während des Rippens zunächst auf die lokale Platte:
+- schreibt während des Rippens ausschließlich auf die lokale Platte:
 
   ```text
   $HOME/rip-local
   ```
 
-- überträgt erst abgeschlossene Rips nach:
+- prüft nach dem Rip das Whipper-Log, die erzeugten Dateien und AccurateRip
+- verschiebt erst danach den fertigen Albumordner manuell nach:
 
   ```text
-  /mnt/nas/musictemp
+  /mnt/nas/musicincome
   ```
 
 Das lokale Rip-Ziel verhindert, dass ein stockender NAS-Mount den eigentlichen Lesevorgang blockiert oder wie ein CD-/Laufwerksfehler aussieht.
+
+Eine zusätzliche automatische Veröffentlichung lokaler Rips wurde bewusst **nicht** eingerichtet. Nach der ohnehin notwendigen manuellen Logprüfung ist das direkte Verschieben nach `musicincome` einfacher und transparenter.
 
 ### HP EliteDesk / Docker-Host
 
@@ -47,81 +53,89 @@ Das lokale Rip-Ziel verhindert, dass ein stockender NAS-Mount den eigentlichen L
   /mnt/nas/media
   ```
 
-- prüft, ob der vollständige Rip auf dem NAS angekommen ist
-- verschiebt fertige Import-Pakete nach:
-
-  ```text
-  /mnt/nas/media/musicincome
-  ```
-
-- führt den Import über den Beets-Container aus
+- führt den Import über den Container `music-beets` aus
+- überwacht zwei getrennte Importquellen:
+  - normale Importpakete aus `musicincome`
+  - manuell genehmigte unvollständige Rips aus `musicreview-approvedincomplete`
 - betreibt Polling und Cleanup per `systemd`
 
 ### NAS
 
 Zentrale Ablage für:
 
-- `musictemp` – fertige, aber noch nicht freigegebene Rips
-- `musicincome` – Eingang für vollständige Import-Pakete
+- `musicincome` – Eingang für geprüfte, reguläre Importpakete
 - `Musik` – produktive Musikbibliothek
-- `music-review/_IMPORTED_DONE` – erfolgreich verarbeitete Restdateien
-- `music-review/_MANUAL_REVIEW` – inhaltlich oder qualitativ unklare Fälle
-- `music-review/_FAILED_IMPORTS` – technische Importfehler
+- `music-review/_IMPORTED_DONE` – Restdateien erfolgreicher Importe
+- `music-review/_MANUAL_REVIEW` – reguläre Importe mit nicht übernommenen Audiodateien
+- `music-review/_FAILED_IMPORTS` – technische Fehler regulärer Importe
+- `music-review/musicreview-approvedincomplete` – manuell akzeptierte, unvollständige Rips
+- `music-review/_APPROVED_IMPORT_FAILED` – technische Fehler beim Import genehmigter Rips
+- `musictemp` – derzeit **kein Rip-Übergabeordner mehr**, sondern noch Speicherort der aktiven Beets-Datenbank
 
 ---
 
 ## Wichtige Pfade
 
-### Ubuntu-Rechner
+### MACiMessernix
 
 | Zweck | Pfad |
 |---|---|
 | Lokaler Rip-Arbeitsbereich | `$HOME/rip-local` |
-| Übergabe auf dem NAS | `/mnt/nas/musictemp` |
+| NAS-Mount | `/mnt/nas` |
+| Regulärer Beets-Eingang | `/mnt/nas/musicincome` |
 
 ### HP EliteDesk
 
 | Zweck | Pfad |
 |---|---|
 | NAS-Mount | `/mnt/nas/media` |
-| Sicht auf die Rip-Übergabe | `/mnt/nas/media/musictemp` |
-| Eingang für fertige Import-Pakete | `/mnt/nas/media/musicincome` |
+| Regulärer Beets-Eingang | `/mnt/nas/media/musicincome` |
 | Produktive Bibliothek | `/mnt/nas/media/Musik` |
+| Aktueller Datenbank-Speicherort | `/mnt/nas/media/musictemp/beets.db` |
 | Erfolgreich verarbeitete Restordner | `/mnt/nas/media/music-review/_IMPORTED_DONE` |
 | Manuelle Nachbearbeitung | `/mnt/nas/media/music-review/_MANUAL_REVIEW` |
-| Technische Fehler | `/mnt/nas/media/music-review/_FAILED_IMPORTS` |
+| Technische Fehler regulärer Importe | `/mnt/nas/media/music-review/_FAILED_IMPORTS` |
+| Genehmigte unvollständige Rips | `/mnt/nas/media/music-review/musicreview-approvedincomplete` |
+| Fehler genehmigter Importe | `/mnt/nas/media/music-review/_APPROVED_IMPORT_FAILED` |
 
 ### Beets-Container
 
 | Zweck | Pfad |
 |---|---|
-| Eingang | `/music/incoming` |
+| Regulärer Eingang | `/music/incoming` |
+| Eingang für genehmigte Rips | `/music/approvedincoming` |
 | Bibliothek | `/music/library` |
-| Beets-Datenbank | `/music/temp/beets.db` |
+| Aktuelle Beets-Datenbank | `/music/temp/beets.db` |
+| Hauptkonfiguration | `/config/config.yaml` |
+| Sonderprofil für genehmigte Rips | `/config/approved-import.yaml` |
 
 ---
 
-## Mount-Unterschiede zwischen Ubuntu-Rechner und HP
+## Mount-Unterschiede zwischen Rip-Station und HP
 
-Die NAS-Freigabe wird auf den beiden Systemen unterschiedlich eingehängt:
-
-- **Ubuntu-Rechner:** `/mnt/nas`
-- **HP EliteDesk:** `/mnt/nas/media`
-
-Daher gilt:
+Die NAS-Freigabe wird auf beiden Systemen unterschiedlich eingehängt:
 
 ```text
-Ubuntu: /mnt/nas/musictemp
-HP:     /mnt/nas/media/musictemp
+MACiMessernix: /mnt/nas
+HP EliteDesk:  /mnt/nas/media
 ```
 
-Nicht auf dem Ubuntu-Rechner versehentlich `/mnt/nas/media/...` verwenden. Das würde in einen falschen Unterpfad innerhalb der Freigabe schreiben.
+Daher gilt beispielsweise:
+
+```text
+MACiMessernix: /mnt/nas/musicincome
+HP EliteDesk:  /mnt/nas/media/musicincome
+```
+
+Auf MACiMessernix nicht versehentlich `/mnt/nas/media/...` verwenden. Die Freigabe `media` ist dort bereits direkt unter `/mnt/nas` eingehängt.
+
+Für manuelles Verschieben im Dateimanager wird der fest eingehängte CIFS-Pfad `/mnt/nas/musicincome` verwendet. Die zusätzlich sichtbare GVFS-Verbindung über `smb://...` wird für den dokumentierten Workflow nicht benötigt.
 
 ---
 
-## Aktuell geprüfte Rip-Umgebung
+## Aktuell geprüfte Umgebung
 
-Stand der bisherigen Diagnose:
+### Rip-Werkzeuge
 
 ```text
 whipper 0.10.0
@@ -139,6 +153,14 @@ drive_auto_close = False
 ```
 
 Der für das Verbatim-Laufwerk konfigurierte Read-Offset `6` wird beibehalten. Zahlreiche AccurateRip-Treffer bestätigen, dass die grundsätzliche Offset-Konfiguration funktioniert.
+
+### Beets
+
+```text
+beets 2.8.0
+Python 3.12.12
+Plugins: duplicates, embedart, fromfilename, lyrics, musicbrainz, web
+```
 
 ---
 
@@ -193,58 +215,50 @@ Ein Rip wird nicht allein deshalb als erfolgreich betrachtet, weil der Prozess b
 - fehlende FLAC-Dateien
 - AccurateRip meldet `rip NOT accurate`
 
-Eine angezeigte `Rip quality` unter 100 % ist dagegen nicht automatisch ein Fehler. Wenn AccurateRip den Track bestätigt, ist der Rip trotz zusätzlicher Korrekturarbeit verifiziert.
+Eine angezeigte `Rip quality` unter 100 % ist nicht automatisch ein Fehler. Wenn AccurateRip den Track bestätigt, ist der Rip trotz zusätzlicher Korrekturarbeit verifiziert.
 
-### 4. Fertigen Rip auf das NAS kopieren
+### 4. Geprüften Albumordner manuell freigeben
 
-Beispiel für einen Albumordner:
+Nach der Logprüfung wird der komplette Albumordner im Dateimanager ausgeschnitten und nach folgendem Pfad verschoben:
 
-```bash
-rsync -a --partial --info=progress2 \
-  "$HOME/rip-local/<ALBUMORDNER>/" \
-  "/mnt/nas/musictemp/<ALBUMORDNER>/"
+```text
+/mnt/nas/musicincome
 ```
 
-Anschließend optional bytegenau gegenprüfen:
+Alternativ im Terminal:
 
 ```bash
-rsync -a --checksum --dry-run \
-  "$HOME/rip-local/<ALBUMORDNER>/" \
-  "/mnt/nas/musictemp/<ALBUMORDNER>/"
+mv -- \
+  "$HOME/rip-local/<ALBUMORDNER>" \
+  "/mnt/nas/musicincome/"
 ```
 
-Keine Ausgabe bedeutet, dass `rsync` keine Unterschiede gefunden hat.
+`musicincome` ist ausschließlich für fertige Importpakete vorgesehen. Dort darf nicht mehr gerippt, kopiert oder nachträglich ergänzt werden.
 
-Die lokale Kopie erst löschen, wenn der Rip auf dem HP sichtbar ist und der Import erfolgreich abgeschlossen wurde.
+Die lokale Kopie wird beim Verschieben entfernt. Wer zusätzliche Sicherheit möchte, kopiert zunächst mit `rsync`, prüft die Übertragung und löscht die lokale Quelle erst nach erfolgreichem Beets-Import.
 
-### 5. Auf dem HP prüfen, ob der Rip sichtbar ist
+### 5. Ruhezeit und automatischer Import
+
+Das Polling-Skript wartet, bis innerhalb des Albumordners mindestens 15 Minuten lang keine Datei mehr verändert wurde. Anschließend startet es den nicht-interaktiven Beets-Import.
+
+### 6. Ergebnis prüfen
+
+Beets-Datenbank:
 
 ```bash
-find /mnt/nas/media/musictemp -maxdepth 3 -type d | sort
-find /mnt/nas/media/musictemp -maxdepth 3 -type f | sort
+docker exec music-beets beet ls -p '<SUCHBEGRIFF>'
 ```
 
-Erst wenn der HP den vollständigen Ordner unter `/mnt/nas/media/musictemp/...` sieht, gilt der Rip als auf dem NAS angekommen.
-
-### 6. Albumordner nach `musicincome` verschieben
+Dateisystem:
 
 ```bash
-mv "/mnt/nas/media/musictemp/<ALBUMORDNER>" \
-   "/mnt/nas/media/musicincome/"
+find /mnt/nas/media/Musik \
+  -type f \
+  -ipath '*<SUCHBEGRIFF>*' \
+  -print
 ```
 
-`musicincome` ist nur für fertige Import-Pakete vorgesehen. Dort darf nicht mehr gerippt, kopiert oder nachträglich ergänzt werden.
-
-### 7. Polling übernimmt den Import
-
-Der Polling-Mechanismus erkennt ruhende, vollständige Import-Pakete und startet den nicht-interaktiven Beets-Import.
-
-### 8. Ergebnis prüfen
-
-```bash
-docker exec -it music-beets beet ls | tail -n 30
-find /mnt/nas/media/Musik -maxdepth 4 -type f | tail -n 30
-```
+Bei einer Artist-Suche kann zusätzlich `albumartist` relevant sein. Eine Suche nur über den Dateinamen mit `-iname` findet den Künstler nicht zwingend, wenn sein Name nur im Verzeichnispfad steht.
 
 ---
 
@@ -252,11 +266,276 @@ find /mnt/nas/media/Musik -maxdepth 4 -type f | tail -n 30
 
 | Status | Bedeutung | Aktion |
 |---|---|---|
-| Grün | Alle Tracks AccurateRip-bestätigt | Nach `musictemp`, anschließend Import |
-| Gelb | Reproduzierbare CRCs, aber kein Datenbanktreffer | Log aufheben, bei Bedarf zweites Laufwerk testen |
-| Rot | Unterschiedliche CRCs, fehlende Tracks, Null-Byte-Dateien oder Transportfehler | Nicht importieren; Problem-CD-Workflow starten |
+| Grün | Alle Tracks AccurateRip-bestätigt | Direkt nach `musicincome` freigeben |
+| Gelb | Reproduzierbare CRCs, aber kein Datenbanktreffer | Log aufheben, manuell entscheiden, gegebenenfalls zweites Laufwerk testen |
+| Rot | Unterschiedliche CRCs, fehlende Tracks, Null-Byte-Dateien oder Transportfehler | Nicht als vollständigen Archiv-Rip importieren; Problem-CD-Workflow starten |
 
-Bei einem roten Ergebnis dürfen vorhandene, scheinbar abspielbare Dateien nicht automatisch in die produktive Bibliothek übernommen werden.
+Ein bewusst akzeptierter unvollständiger Rip wird nicht nach `musicincome`, sondern nach `musicreview-approvedincomplete` gelegt.
+
+---
+
+## Docker- und Beets-Konfiguration
+
+### Relevante Volume-Mounts
+
+```yaml
+volumes:
+  - /opt/docker/beets/config:/config
+  - /mnt/nas/media/musicincome:/music/incoming:rw
+  - /mnt/nas/media/Musik:/music/library
+  - /mnt/nas/media/musictemp:/music/temp
+  - /mnt/nas/media/music-review:/music/review
+  - /mnt/nas/media/music-review/musicreview-approvedincomplete:/music/approvedincoming
+```
+
+Der zusätzliche Mount `/music/approvedincoming` ist notwendig, damit genehmigte unvollständige Rips direkt importiert werden können, ohne sie erneut durch `musicincome` zu schicken.
+
+### Hauptkonfiguration
+
+Auszug aus `/opt/docker/beets/config/config.yaml`:
+
+```yaml
+directory: /music/library
+library: /music/temp/beets.db
+
+paths:
+  default: $albumartist/$album/$track - $title
+  singleton: Non-Album/$artist - $title
+  comp: Compilations/$album/$track - $title
+
+import:
+  move: yes
+  copy: no
+  autotag: yes
+  duplicate_action: ask
+  quiet: no
+  timelimit: 300
+```
+
+Eine Option `destination:` wird nicht verwendet. Das Ziel der Bibliothek wird durch `directory: /music/library` festgelegt.
+
+### Sonderprofil für genehmigte unvollständige Rips
+
+Datei:
+
+```text
+/opt/docker/beets/config/approved-import.yaml
+```
+
+Inhalt:
+
+```yaml
+threaded: no
+
+import:
+  move: yes
+  copy: no
+  autotag: no
+  duplicate_action: merge
+  quiet: yes
+  resume: no
+```
+
+Bedeutung:
+
+- `autotag: no`: vorhandene Tags werden verwendet; die manuelle Entscheidung wird nicht erneut durch eine MusicBrainz-Vollständigkeitsprüfung aufgehoben
+- `duplicate_action: merge`: vorhandene Tracks werden mit einem bereits vorhandenen Album zusammengeführt
+- `threaded: no`: verhindert bei Beets 2.8.0 Probleme beim parallelen Zusammenführen
+- `move: yes`: erfolgreich importierte Audiodateien werden nach `/music/library` verschoben
+
+Konfiguration prüfen:
+
+```bash
+docker exec music-beets \
+  beet --config /config/approved-import.yaml config \
+  | grep -E 'threaded:|move:|autotag:|duplicate_action:'
+```
+
+Erwartet:
+
+```text
+threaded: no
+move: yes
+autotag: no
+duplicate_action: merge
+```
+
+---
+
+## Polling-Automatisierung
+
+### Komponenten
+
+| Komponente | Pfad |
+|---|---|
+| Polling-Skript | `/opt/docker/beets/poll-import.sh` |
+| Service | `/etc/systemd/system/beets-poll.service` |
+| Timer | `/etc/systemd/system/beets-poll.timer` |
+| Log | `/opt/docker/beets/beets-poll.log` |
+
+### Produktive Werte
+
+- Polling-Intervall: **5 Minuten**
+- Ruhezeit vor Import: **15 Minuten ohne Änderungen**
+- Parallelität: durch `flock` auf einen aktiven Lauf begrenzt
+
+Timer:
+
+```ini
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=beets-poll.service
+Persistent=true
+```
+
+Ein Import kann länger als fünf Minuten dauern. In diesem Fall kann der nächste fällige Lauf unmittelbar nach Abschluss starten. Durch `flock` laufen trotzdem keine zwei Importe gleichzeitig.
+
+### Quelle 1: normaler Eingang
+
+Host:
+
+```text
+/mnt/nas/media/musicincome
+```
+
+Container:
+
+```text
+/music/incoming
+```
+
+Importaufruf:
+
+```bash
+beet import -q -P --quiet-fallback skip <PFAD>
+```
+
+Ergebnislogik:
+
+- Exit-Code ungleich 0 → `_FAILED_IMPORTS`
+- Exit-Code 0 und keine Audiodateien mehr → Restordner nach `_IMPORTED_DONE`
+- Exit-Code 0, aber Audiodateien bleiben zurück → `_MANUAL_REVIEW`
+
+### Quelle 2: genehmigte unvollständige Rips
+
+Host:
+
+```text
+/mnt/nas/media/music-review/musicreview-approvedincomplete
+```
+
+Container:
+
+```text
+/music/approvedincoming
+```
+
+Importaufruf:
+
+```bash
+beet --config /config/approved-import.yaml \
+  import -q -P -A -m <PFAD>
+```
+
+Bedeutung:
+
+- `-A`: Import ohne erneute Autotag-Zuordnung; vorhandene Tags werden verwendet
+- `-m`: Audiodateien in die Bibliothek verschieben
+- `merge`: fehlende beziehungsweise ergänzende Tracks mit einem vorhandenen Album zusammenführen
+
+Ergebnislogik:
+
+- Exit-Code ungleich 0 → `_APPROVED_IMPORT_FAILED`
+- Exit-Code 0 und keine Audiodateien mehr → Restordner nach `_IMPORTED_DONE`
+- Exit-Code 0, aber Audiodateien bleiben zurück → `_APPROVED_IMPORT_FAILED`
+
+Wichtige Sicherheitsregel:
+
+> Ein Ordner mit verbliebenen Audiodateien darf niemals nach `_IMPORTED_DONE` verschoben werden.
+
+Der Exit-Code allein gilt nicht als Erfolgsnachweis. Das Skript kontrolliert nach dem Import zusätzlich, ob im Quellordner noch Audiodateien vorhanden sind.
+
+### Lyrics-Fehler
+
+Meldungen wie:
+
+```text
+lyrics: LRCLib: Request error: 400 Client Error
+```
+
+betreffen nur den Abruf von Liedtexten. Sie verhindern den Musikimport nicht, solange Beets den eigentlichen Import erfolgreich beendet.
+
+---
+
+## Manuelle Nachbearbeitung und Freigabe unvollständiger Rips
+
+### Regulärer Problemfall
+
+Nicht vollständig übernommene reguläre Importpakete landen unter:
+
+```text
+/mnt/nas/media/music-review/_MANUAL_REVIEW
+```
+
+Typische Gründe:
+
+- Beets überspringt einzelne Tracks im Quiet-Modus.
+- MusicBrainz-Zuordnung ist nicht sicher genug.
+- Metadaten sind unklar.
+- Ein oder mehrere Tracks fehlen.
+- Ein Rip ist nur als unverifizierte Hörkopie vorhanden.
+
+### Manuelle Entscheidung
+
+Nach der Prüfung gibt es zwei Wege:
+
+- erneut rippen → nach `musicreview-rerip` beziehungsweise zurück in den Rip-Workflow
+- vorhandene unvollständige Fassung bewusst behalten → nach `musicreview-approvedincomplete`
+
+Beispiel auf dem HP:
+
+```bash
+mv -- \
+  "/mnt/nas/media/music-review/_MANUAL_REVIEW/<ALBUMORDNER>" \
+  "/mnt/nas/media/music-review/musicreview-approvedincomplete/"
+```
+
+Der nächste Polling-Lauf verwendet automatisch das Approved-Sonderprofil. Der Ordner wird **nicht** wieder durch die normale Vollständigkeitslogik von `musicincome` geschickt. Dadurch entsteht kein Teufelskreis.
+
+### Technischer Fehler beim Approved-Import
+
+Ordner landen unter:
+
+```text
+/mnt/nas/media/music-review/_APPROVED_IMPORT_FAILED
+```
+
+Dort wird geprüft:
+
+- Beets-Log und Exit-Code
+- verbleibende Audiodateien
+- Tags und Dateiformate
+- vorhandene Duplikate beziehungsweise Albumzusammenführung
+- Schreibrechte auf `/music/library`
+
+---
+
+## Cleanup-Automatisierung
+
+### Komponenten
+
+| Komponente | Pfad |
+|---|---|
+| Cleanup-Skript | `/opt/docker/beets/cleanup-imported-done.sh` |
+| Service | `/etc/systemd/system/beets-cleanup.service` |
+| Timer | `/etc/systemd/system/beets-cleanup.timer` |
+
+### Regel
+
+Alles in `_IMPORTED_DONE`, das älter als 30 Tage ist, wird gelöscht.
+
+Dort dürfen deshalb ausschließlich Restdateien erfolgreicher Importe liegen. Wichtige Whipper-, AccurateRip- oder Diagnose-Logs müssen vor Ablauf der Frist an anderer Stelle archiviert werden, wenn sie langfristig erhalten bleiben sollen.
 
 ---
 
@@ -348,7 +627,7 @@ Diese Modelle sind Beispiele, keine Garantie für jede beschädigte CD. Untersch
 
 ---
 
-## Was die beobachteten cd-paranoia-Meldungen bedeuten
+## Bedeutung beobachteter cd-paranoia-Meldungen
 
 | Meldung | Einordnung |
 |---|---|
@@ -359,7 +638,7 @@ Diese Modelle sind Beispiele, keine Garantie für jede beschädigte CD. Untersch
 | `[transport error]` | SCSI-/ATAPI-Leseanforderung wurde nicht regulär erfüllt |
 | Prozessstatus `D` / `blk_execute_rq` | Prozess wartet im Kernel auf eine Geräteanforderung |
 
-Viele Korrektur-, Overlap- und Verify-Meldungen rund um dieselben Positionen bedeuten, dass cd-paranoia nicht eingefroren ist, sondern wiederholt versucht, einen instabil lesbaren Bereich zu rekonstruieren.
+Viele Korrektur-, Overlap- und Verify-Meldungen rund um dieselben Positionen bedeuten, dass cd-paranoia nicht vollständig eingefroren ist, sondern wiederholt versucht, einen instabil lesbaren Bereich zu rekonstruieren.
 
 ---
 
@@ -406,11 +685,13 @@ AppArmor-Meldungen des Profils `snap.fing-agent.fingagent` betreffen den Fing Ag
 
 ---
 
-## Optional: Timeout nur für cd-paranoia
+## Optionaler cd-paranoia-Timeout
 
-Whipper besitzt in Version 0.10.0 keinen eigenen Timeout für einen einzelnen Lesevorgang. Ein Wrapper kann verhindern, dass ein Track unbegrenzt lange gelesen wird.
+Whipper 0.10.0 besitzt keinen eigenen Timeout für einen einzelnen Lesevorgang. Ein Wrapper kann verhindern, dass ein Track unbegrenzt lange gelesen wird.
 
-### Wrapper anlegen
+Der Wrapper ist derzeit **noch nicht produktiv eingerichtet** und bleibt ein späterer optionaler Verbesserungspunkt.
+
+Beispiel:
 
 ```bash
 mkdir -p "$HOME/.local/libexec/whipper"
@@ -428,7 +709,7 @@ WRAPPER
 chmod +x "$HOME/.local/libexec/whipper/cd-paranoia"
 ```
 
-### Whipper mit Wrapper starten
+Whipper mit Wrapper:
 
 ```bash
 PATH="$HOME/.local/libexec/whipper:$PATH" \
@@ -448,13 +729,9 @@ Manche älteren Audio-CDs besitzen absichtlich fehlerhafte oder nicht standardko
 
 Dieser Weg „entfernt“ keinen Kopierschutz und garantiert keinen korrekten Rip. Entscheidend bleibt, ob das Ergebnis reproduzierbar ist oder durch AccurateRip bestätigt wird.
 
-### 1. CD auf dem Mac rippen
+### Option A: Apple Music
 
-#### Option A: Apple Music
-
-Apple Music eignet sich als unkomplizierter Fallback, wenn Whipper oder XLD die Disc nicht sauber verarbeiten. In den Importeinstellungen sollte nach Möglichkeit **Apple Lossless Encoder (ALAC)** gewählt werden.
-
-Empfohlene Einstellung:
+Apple Music eignet sich als unkomplizierter Fallback, wenn Whipper oder XLD die Disc nicht sauber verarbeiten. Nach Möglichkeit wird **Apple Lossless Encoder (ALAC)** verwendet:
 
 ```text
 Musik → Einstellungen → Dateien → Importeinstellungen
@@ -463,57 +740,30 @@ Importieren mit: Apple Lossless Encoder
 
 Ein ALAC-Rip wird als `.m4a` gespeichert, ist aber verlustfrei. AAC sollte nur verwendet werden, wenn ALAC nicht funktioniert oder lediglich eine Hörkopie benötigt wird.
 
-Ein Apple-Music-Import besitzt normalerweise kein Whipper-/XLD-Log und keine eigene sichere Mehrfachlesung. Ohne zusätzliche Verifikation wird er daher zunächst als **unverifiziert** behandelt.
+Ein Apple-Music-Import besitzt normalerweise kein Whipper-/XLD-Log und keine eigene sichere Mehrfachlesung. Ohne zusätzliche Verifikation wird er als **unverifiziert** behandelt.
 
-#### Option B: XLD – bevorzugter Mac-Ripper
+### Option B: XLD
 
-Zuerst immer mit sicheren Einstellungen versuchen:
+Zuerst mit sicheren Einstellungen versuchen:
 
 - Ausgabeformat: `FLAC`, `ALAC` oder `WAV`
 - Rip-Modus: `XLD Secure Ripper`
 - AccurateRip: aktiviert
 - Logdatei: speichern
-- Laufwerksoffset: für das konkrete Mac-Laufwerk ermitteln und konfigurieren
+- Laufwerksoffset für das konkrete Mac-Laufwerk konfigurieren
 
-Wenn XLD im Secure-Modus ebenfalls dauerhaft hängt oder die Disc wegen einer ungewöhnlichen Struktur nicht verarbeiten kann, darf als letzter Rettungsversuch ein schnellerer Modus getestet werden:
+Wenn XLD im Secure-Modus dauerhaft hängt, kann als letzter Rettungsversuch getestet werden:
 
 - Rip-Modus: `Burst`
 - Paranoia Mode: `None`
 
-Burst/None verzichtet auf einen wesentlichen Teil der Fehlerkorrektur und Mehrfachprüfung. Das Ergebnis ist nur dann als Archiv-Rip akzeptabel, wenn AccurateRip es bestätigt oder mehrere unabhängige Durchläufe identische Audiodaten ergeben. Andernfalls bleibt es eine gekennzeichnete Hörkopie.
+Burst/None reduziert die Fehlerkorrektur. Ohne AccurateRip-Bestätigung oder reproduzierbare unabhängige Durchläufe bleibt das Ergebnis eine gekennzeichnete Hörkopie.
 
-### 2. Ergebnis auf dem Mac einordnen
+### M4A richtig behandeln
 
-| Ergebnis | Einstufung | Aktion |
-|---|---|---|
-| XLD + AccurateRip bestätigt alle Tracks | verifizierter Archiv-Rip | nach `musictemp` übertragen |
-| XLD Secure, reproduzierbare Prüfsummen, kein AccurateRip-Eintrag | manuelle Prüfung | Log aufheben und optional zweites Laufwerk testen |
-| XLD Burst/None ohne AccurateRip-Bestätigung | unverifizierte Rettungs-/Hörkopie | getrennt kennzeichnen |
-| Apple Music als ALAC ohne weitere Verifikation | verlustfrei, aber unverifiziert | manuell prüfen |
-| Apple Music als AAC | verlustbehaftete Hörkopie | Original-M4A behalten |
+`.m4a` ist nur der Container. Darin kann ALAC oder AAC stecken.
 
-### 3. Dateien auf den HP beziehungsweise das NAS übertragen
-
-Alle Mac-Rips gehen zunächst nach `musictemp` und nicht direkt nach `musicincome`:
-
-```bash
-rsync -a --partial --info=progress2 \
-  "/Pfad/zum/Albumordner/" \
-  "user@hp-elitedesk:/mnt/nas/media/musictemp/<ALBUMORDNER>/"
-```
-
-Alternativ kann bei direkt auf dem Mac eingebundener NAS-Freigabe in den entsprechenden `musictemp`-Ordner kopiert werden.
-
-Erst nach Prüfung von Format, Vollständigkeit und Rip-Status wird der Albumordner auf dem HP nach `musicincome` verschoben:
-
-```bash
-mv "/mnt/nas/media/musictemp/<ALBUMORDNER>" \
-   "/mnt/nas/media/musicincome/"
-```
-
-### 4. M4A richtig behandeln
-
-`.m4a` bezeichnet nur den Container. Darin kann verlustfreies **ALAC** oder verlustbehaftetes **AAC** stecken. Vor einer Konvertierung den Codec prüfen:
+Codec prüfen:
 
 ```bash
 ffprobe -v error \
@@ -523,9 +773,7 @@ ffprobe -v error \
   "input.m4a"
 ```
 
-#### ALAC → FLAC
-
-Eine Konvertierung von ALAC zu FLAC bleibt verlustfrei:
+ALAC → FLAC bleibt verlustfrei:
 
 ```bash
 ffmpeg -i "input.m4a" \
@@ -535,183 +783,11 @@ ffmpeg -i "input.m4a" \
   "output.flac"
 ```
 
-Die Quelldatei erst löschen, nachdem die FLAC-Datei geprüft wurde. Cover-Art und einzelne Apple-spezifische Metadaten sollten anschließend kontrolliert werden.
+AAC → FLAC stellt verlorene Informationen nicht wieder her. AAC-M4A möglichst unverändert behalten und als verlustbehaftete Quelle kennzeichnen.
 
-#### AAC → FLAC
+### Freigabe
 
-AAC kann technisch nach FLAC transkodiert werden, die bereits verlorenen Informationen werden dadurch aber nicht wiederhergestellt. Deshalb AAC-M4A möglichst unverändert behalten und nicht als verlustfreien Rip kennzeichnen.
-
-### 5. Import durch Beets
-
-Nach der manuellen Freigabe wird der Ordner nach `musicincome` verschoben. Das Polling-Skript übernimmt anschließend den regulären Beets-Import. Unverifizierte Rettungskopien sollten vorher eindeutig markiert oder nach `_MANUAL_REVIEW` gelegt werden.
-
----
-
-## Alternative Rip-Software
-
-### Linux: Cyanrip
-
-Cyanrip kann als alternativer Ablauf getestet werden. Es verwendet jedoch ebenfalls die libcdio-/cd-paranoia-Basis. Deshalb ist bei physisch schwer lesbaren Bereichen keine grundsätzlich andere Laufwerksleistung zu erwarten.
-
-### macOS: XLD
-
-Für archivfähige Rips:
-
-- Ausgabeformat `FLAC` oder `WAV`
-- `XLD Secure Ripper` verwenden
-- AccurateRip aktivieren
-- Logdatei aufheben
-
-Nicht als Standard für problematische Archiv-Rips verwenden:
-
-- Burst-Modus
-- Paranoia/Verifikation deaktiviert
-
-Diese schnellen Modi können eine Datei erzeugen, reduzieren aber die Sicherheit, dass die Audiodaten korrekt sind.
-
-### Windows: CUERipper / CUETools
-
-CUERipper ist für schwierige CDs eine sinnvolle zusätzliche Strategie:
-
-- AccurateRip-Unterstützung
-- CTDB-Unterstützung
-- vollständige Images mit CUE und Log möglich
-- kleine beschädigte Bereiche können bei passendem Datenbankeintrag eventuell über CTDB rekonstruiert werden
-
-Ein großflächig oder auf mehreren Laufwerken nicht reproduzierbar lesbarer Track ist jedoch auch damit nicht garantiert reparierbar.
-
-### AAC/M4A nur als Hörkopie
-
-Ein Rip als AAC/M4A kann als letzte Möglichkeit für eine reine Hörkopie dienen, ist aber kein verlustfreier Archiv-Rip.
-
-Eine Konvertierung von AAC/M4A nach FLAC:
-
-```bash
-ffmpeg -i input.m4a -c:a flac output.flac
-```
-
-macht die Datei technisch zu FLAC, stellt aber die bei der AAC-Kompression verlorenen Informationen nicht wieder her. Die Qualität bleibt die einer verlustbehafteten Quelle. Das Original-M4A sollte deshalb erhalten und die Herkunft klar gekennzeichnet werden.
-
----
-
-## Beets-Konzept
-
-### Import-Verhalten
-
-- Import läuft bewusst nicht-interaktiv im Polling-Workflow.
-- Problematische Fälle werden nicht blind übernommen.
-- Fälle werden getrennt in:
-  - erfolgreich verarbeitet
-  - manuelle Nachbearbeitung
-  - technischer Fehler
-
-### Wichtige Beets-Entscheidungen
-
-- `duplicate_action: skip`
-- MusicBrainz aktiv
-- `duplicates`-Plugin aktiv
-- vereinfachte Lyrics-Konfiguration ohne unnötige Zusatzquellen
-
-### Bibliothekspfad
-
-Beispiel für Compilations:
-
-```text
-Compilations/<Albumname>/...
-```
-
-Dadurch entstehen nicht unnötig viele `Various Artists`-Ordner.
-
----
-
-## Duplicate-Strategie
-
-### Grundsatz
-
-- Offensichtliche Doppelimporte möglichst beim Import abfangen.
-- Sampler und Originalalben nicht allein deshalb als Fehler behandeln, weil ein Titel mehrfach vorkommt.
-- Duplikate nicht automatisch löschen.
-
-### Report-Befehle
-
-Exakte Duplicate-Alben:
-
-```bash
-docker exec -it music-beets beet duplicates -a -F -p
-```
-
-Exakte Duplicate-Tracks:
-
-```bash
-docker exec -it music-beets beet duplicates -F -p
-```
-
-Gleicher Artist und Titel:
-
-```bash
-docker exec -it music-beets \
-  beet duplicates -k title -k artist -F -p
-```
-
-Keine Ausgabe bedeutet in der Regel, dass aktuell keine passenden Duplikate erkannt wurden.
-
----
-
-## Polling-Automatisierung
-
-### Komponenten
-
-| Komponente | Pfad |
-|---|---|
-| Polling-Skript | `/opt/docker/beets/poll-import.sh` |
-| Service | `/etc/systemd/system/beets-poll.service` |
-| Timer | `/etc/systemd/system/beets-poll.timer` |
-
-### Produktive Werte
-
-- Polling-Intervall: **5 Minuten**
-- Ruhezeit vor Import: **15 Minuten ohne Änderungen**
-
-### Verhalten
-
-#### Erfolgreicher Import
-
-- Audiodateien werden nach `/mnt/nas/media/Musik` verschoben.
-- Restordner mit `.cue`, `.log`, `.m3u` oder `.toc` werden nach folgendem Pfad verschoben:
-
-  ```text
-  /mnt/nas/media/music-review/_IMPORTED_DONE
-  ```
-
-#### Problemfall ohne technischen Fehler
-
-```text
-/mnt/nas/media/music-review/_MANUAL_REVIEW
-```
-
-#### Technischer Fehler
-
-```text
-/mnt/nas/media/music-review/_FAILED_IMPORTS
-```
-
----
-
-## Cleanup-Automatisierung
-
-### Komponenten
-
-| Komponente | Pfad |
-|---|---|
-| Cleanup-Skript | `/opt/docker/beets/cleanup-imported-done.sh` |
-| Service | `/etc/systemd/system/beets-cleanup.service` |
-| Timer | `/etc/systemd/system/beets-cleanup.timer` |
-
-### Regel
-
-Alles in `_IMPORTED_DONE`, das älter als 30 Tage ist, wird gelöscht.
-
-Vor dem automatischen Löschen muss sichergestellt sein, dass wichtige Whipper-, AccurateRip- oder Diagnose-Logs an anderer Stelle aufbewahrt werden, falls diese langfristig benötigt werden.
+Nach Prüfung des Mac-Rips wird der Albumordner ebenfalls manuell nach `musicincome` verschoben. Unvollständige, aber bewusst akzeptierte Rips gehen stattdessen nach `musicreview-approvedincomplete`.
 
 ---
 
@@ -719,29 +795,9 @@ Vor dem automatischen Löschen muss sichergestellt sein, dass wichtige Whipper-,
 
 - Alle Discs zunächst vollständig lokal rippen.
 - Jede Disc einzeln qualitativ prüfen.
-- Das vollständige Set gemeinsam nach `musictemp` übertragen.
-- Erst nach Abschluss aller Discs das gesamte Paket nach `musicincome` verschieben.
+- Erst nach Abschluss aller Discs das vollständige Set gemeinsam nach `musicincome` verschieben.
 
-`musicincome` ist der Eingang für fertige Import-Pakete und kein Arbeitsbereich für halbfertige Sets.
-
----
-
-## Manuelle Nachbearbeitung
-
-Fälle landen unter:
-
-```text
-/mnt/nas/media/music-review/_MANUAL_REVIEW
-```
-
-Typische Gründe:
-
-- Beets überspringt den Fall im Quiet-Modus.
-- Zuordnung ist nicht sicher genug.
-- Metadatenlage ist unklar.
-- AccurateRip kennt die Ausgabe nicht.
-- Ein Track ist nur als nicht verifizierte Hörkopie vorhanden.
-- Multi-Disc-Zuordnung ist unvollständig.
+`musicincome` ist kein Arbeitsbereich für halbfertige Sets.
 
 ---
 
@@ -754,23 +810,60 @@ systemctl list-timers --all \
   | grep -E 'beets-poll|beets-cleanup'
 ```
 
-### Polling-Log prüfen
+### Polling-Status
+
+```bash
+systemctl status beets-poll.timer
+systemctl status beets-poll.service
+```
+
+### Polling-Log
 
 ```bash
 tail -n 100 /opt/docker/beets/beets-poll.log
 journalctl -u beets-poll.service -n 50 --no-pager
 ```
 
-### Cleanup-Log prüfen
+### Cleanup-Log
 
 ```bash
 journalctl -u beets-cleanup.service -n 50 --no-pager
 ```
 
-### Beets-Datenbank prüfen
+### Beets-Version
 
 ```bash
-docker exec -it music-beets beet ls | tail -n 50
+docker exec music-beets beet --version
+```
+
+### Aktive Datenbank und Bibliothek
+
+```bash
+docker exec music-beets \
+  beet config \
+  | grep -E '^library:|^directory:'
+```
+
+### Datenbankdatei prüfen
+
+```bash
+docker exec music-beets \
+  sh -c 'ls -lh /music/temp/beets.db* 2>/dev/null'
+```
+
+### Album in Beets suchen
+
+```bash
+docker exec music-beets beet ls -p '<SUCHBEGRIFF>'
+```
+
+### Album im Dateisystem suchen
+
+```bash
+find /mnt/nas/media/Musik \
+  -type f \
+  -ipath '*<SUCHBEGRIFF>*' \
+  -print
 ```
 
 ### Rip-Werkzeuge prüfen
@@ -785,35 +878,127 @@ dpkg -l 'libcdio-paranoia*'
 
 ---
 
-## Bekannte Besonderheiten von Whipper 0.10.0
+## Bekannte Besonderheiten
+
+### Whipper 0.10.0
 
 - Whipper wartet auf den gestarteten cd-paranoia-Prozess und besitzt keinen eigenen Timeout pro Track.
 - Nach fehlgeschlagenen Tracks kann Whipper beim Schreiben des Abschlusslogs mit einem `NoneType`-Fehler abbrechen.
 - Ein solcher Logger-Absturz ist ein Folgefehler und beweist nicht, dass zuvor erfolgreich erzeugte Tracks beschädigt sind.
 - Umgekehrt beweist ein normaler Programmabschluss nicht allein, dass alle Tracks vollständig und verifiziert sind.
 
-Daher sind immer die Trackdateien, das Rip-Log, die CRC-Ergebnisse und AccurateRip maßgeblich.
+Daher sind immer Trackdateien, Rip-Log, CRC-Ergebnisse und AccurateRip maßgeblich.
+
+### Beets 2.8.0
+
+- Genehmigte unvollständige Rips werden mit `threaded: no` importiert.
+- Das verhindert Probleme beim parallelen Zusammenführen bereits vorhandener Alben.
+- Ein späteres Beets-Upgrade sollte separat getestet werden und darf die aktuelle funktionierende Importlogik nicht ungeprüft ersetzen.
+
+---
+
+## Später noch erledigen
+
+Diese Punkte sind bewusst aufgeschoben und sollen nicht vergessen werden.
+
+### 1. Beets-Datenbank aus `musictemp` herauslösen
+
+Aktuell:
+
+```yaml
+library: /music/temp/beets.db
+```
+
+Dadurch darf `musictemp` noch nicht gelöscht oder aus Docker entfernt werden.
+
+Geplante Zielstruktur:
+
+```text
+Host:      /opt/docker/beets/data/beets.db
+Container: /data/beets.db
+```
+
+Geplanter Compose-Mount:
+
+```yaml
+- /opt/docker/beets/data:/data
+```
+
+Geplante Konfiguration:
+
+```yaml
+library: /data/beets.db
+```
+
+Migration nur kontrolliert durchführen:
+
+1. Polling-Timer stoppen.
+2. Datenbank sichern.
+3. Datenbank nach `/opt/docker/beets/data` kopieren.
+4. Compose-Mount und `library:` anpassen.
+5. Container neu erstellen.
+6. Anzahl und Stichproben der Beets-Einträge prüfen.
+7. Erst danach entscheiden, ob `musictemp` vollständig entfallen kann.
+
+### 2. Gebrauchtes vollformatiges CD-/DVD-Laufwerk beschaffen
+
+Gesucht wird ein 5,25-Zoll-SATA-Laufwerk anderer Bauart als das vorhandene Slim-Blu-ray-Laufwerk. Es dient als zusätzlicher Fehlerleser für beschädigte Bibliotheks-CDs.
+
+Interessante Modelle:
+
+- `HL-DT-ST / LG BH14NS48`
+- `ASUS BC-12B1ST`
+- `Lite-On iHAS224 B`
+- `TSSTcorp SH-216DB`
+
+### 3. Optionalen cd-paranoia-Timeout entscheiden
+
+Der Wrapper ist dokumentiert, aber noch nicht produktiv. Er wird eingerichtet, wenn stundenlange Hänger trotz manuellem Eingreifen weiterhin häufig vorkommen.
+
+### 4. Beets-Upgrade prüfen
+
+Aktuell läuft Beets 2.8.0. Ein Upgrade sollte zunächst in einer Sicherungskopie beziehungsweise mit gesicherter Datenbank getestet werden. Danach insbesondere prüfen:
+
+- normaler Quiet-Import
+- Approved-Import mit `merge`
+- Verschieben der Audiodateien
+- Lyrics-Plugin
+- Duplicate-Reports
+- Weboberfläche
+
+### 5. LRCLib-Fehler optional untersuchen
+
+Einzelne Titel liefern `400 Bad Request`, beispielsweise bei einer erkannten Dauer von `0`. Das blockiert den Musikimport nicht. Eine Prüfung ist nur nötig, wenn fehlende Lyrics störend werden.
+
+### 6. Automatische Veröffentlichung lokaler Rips bleibt bewusst verworfen
+
+Ein Marker-/Timer-Workflow wäre technisch möglich, spart nach der manuellen Logprüfung aber kaum Arbeit. Der derzeitige manuelle Schritt bleibt deshalb:
+
+```text
+Rip prüfen → Albumordner nach /mnt/nas/musicincome verschieben
+```
 
 ---
 
 ## Lessons Learned
 
-- Rippen direkt auf ein NAS erschwert die Fehlerdiagnose; lokale Arbeitsdateien sind robuster.
-- Unterschiedliche Mount-Pfade zwischen Ubuntu-Rechner und HP waren eine zentrale Fehlerquelle.
-- Der HP bleibt die Quelle der Wahrheit für die NAS-Sicht und den Importstatus.
-- `inotify` auf NAS/NFS war für diesen Workflow die falsche Wahl.
-- Polling und eine klare Ordnerlogik sind robuster.
+- Direktes Rippen auf ein NAS erschwert die Fehlerdiagnose; lokale Arbeitsdateien sind robuster.
+- Nach der manuellen Logprüfung ist das direkte Verschieben nach `musicincome` einfacher als ein zusätzlicher Veröffentlichungs-Timer.
+- Unterschiedliche Mount-Pfade zwischen Rip-Station und HP sind eine zentrale Fehlerquelle.
+- `musictemp` ist derzeit kein Übergabeordner mehr, darf wegen `beets.db` aber noch nicht gelöscht werden.
+- Reguläre und genehmigte unvollständige Rips benötigen getrennte Importregeln.
+- Ein Beets-Exit-Code 0 beweist allein nicht, dass alle Audiodateien übernommen wurden.
+- Ordner mit verbliebenen Audiodateien dürfen niemals nach `_IMPORTED_DONE` verschoben werden.
+- Polling und eine klare Ordnerlogik sind robuster als Event-Watching auf NAS-Mounts.
 - Bibliotheks-CDs können in einzelnen Bereichen physisch nicht reproduzierbar lesbar sein.
 - Ein zweites Laufwerk mit anderer Mechanik ist bei Problem-CDs oft wirksamer als weitere Softwareoptionen.
-- Niedrigere Geschwindigkeit kann helfen, ist aber kein Ersatz für eine reproduzierbare Prüfsumme.
 - AAC nach FLAC zu konvertieren macht die ursprüngliche verlustbehaftete Kompression nicht rückgängig.
-- Lieber einen Fall nach `_MANUAL_REVIEW` verschieben, als einen unbestätigten Rip blind zu importieren.
 
 ---
 
 ## Merksatz
 
-**Ubuntu rippt lokal. Ubuntu überträgt. HP verifiziert. HP verschiebt. HP importiert.**
+**Lokal rippen. Log prüfen. Manuell freigeben. HP importiert. Problemfälle bleiben getrennt.**
 
 ---
 
@@ -822,6 +1007,7 @@ Daher sind immer die Trackdateien, das Rip-Log, die CRC-Ergebnisse und AccurateR
 - [Whipper – Projekt und Dokumentation](https://github.com/whipper-team/whipper)
 - [Whipper `cd rip` – Optionen](https://github.com/whipper-team/whipper/blob/develop/man/whipper-cd-rip.rst)
 - [CDDA Paranoia – Benutzerhandbuch](https://www.xiph.org/paranoia/manual.html)
+- [Beets – Dokumentation](https://beets.readthedocs.io/)
 - [XLD – offizielle Website](https://tmkk.undo.jp/xld/index_e.html)
 - [CUERipper – CUETools Wiki](https://cue.tools/wiki/CUERipper)
 - [CUETools Database](https://cue.tools/wiki/CUETools_Database)

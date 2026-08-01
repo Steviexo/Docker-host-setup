@@ -1,6 +1,6 @@
 # Beets / Whipper CD-Rip-Workflow
 
-> Stand: 22. Juli 2026
+> Stand: 1. August 2026
 
 ## Zweck
 
@@ -145,14 +145,38 @@ flac 1.4.3
 libcdio-paranoia2t64 installiert
 ```
 
-In `~/.config/whipper/whipper.conf` ist das automatische Schließen der Laufwerkslade deaktiviert:
+Die produktiven Whipper-Defaults stehen in `~/.config/whipper/whipper.conf`:
 
 ```ini
 [whipper]
 drive_auto_close = False
+
+[whipper.cd.rip]
+prompt = True
+keep_going = True
+max_retries = 2
+output_directory = ~/rip-local
+track_template = %%A/%%d/%%t - %%n
+disc_template = %%A/%%d/%%A - %%d
 ```
 
-Der für das Verbatim-Laufwerk konfigurierte Read-Offset `6` wird beibehalten. Zahlreiche AccurateRip-Treffer bestätigen, dass die grundsätzliche Offset-Konfiguration funktioniert.
+In der Konfigurationsdatei müssen Prozentzeichen in den Templates als `%%` geschrieben werden. Dadurch reicht für den normalen Rip künftig der kurze Aufruf `whipper cd rip`.
+
+Der für das Verbatim-Laufwerk konfigurierte Read-Offset `6` wird beibehalten. Zahlreiche AccurateRip-Treffer bestätigen, dass die grundsätzliche Offset-Konfiguration dieses Laufwerks funktioniert.
+
+Als zweites, vollformatiges Laufwerk ist inzwischen ein **Toshiba Samsung / TSSTcorp SH-216DB** vorhanden und wird für Problem-CDs getestet. Read-Offset und Cache-Verhalten müssen laufwerksspezifisch behandelt und dokumentiert werden.
+
+Der produktive `cd-paranoia`-Wrapper liegt unter:
+
+```text
+$HOME/.local/libexec/whipper/cd-paranoia
+```
+
+und wird über `~/.profile` dauerhaft vor `/usr/bin` in den `PATH` gesetzt:
+
+```bash
+export PATH="$HOME/.local/libexec/whipper:$PATH"
+```
 
 ### Beets
 
@@ -175,20 +199,18 @@ mkdir -p "$HOME/rip-local"
 ### 2. CD lokal rippen
 
 ```bash
-whipper cd rip -p -k -r 2 \
-  -O "$HOME/rip-local" \
-  --track-template "%A/%d/%t - %n" \
-  --disc-template "%A/%d/%A - %d"
+whipper cd rip
 ```
 
-Bedeutung der wichtigsten Optionen:
+Die früher bei jedem Start übergebenen Optionen sind jetzt dauerhaft unter `[whipper.cd.rip]` in `~/.config/whipper/whipper.conf` hinterlegt:
 
-- `-p`: bei mehreren MusicBrainz-Treffern nachfragen
-- `-k`: nach einem nicht lesbaren Track mit den folgenden Tracks fortfahren
-- `-r 2`: höchstens zwei vollständige Rip-Versuche pro Track
-- `-O`: Ausgabe zunächst auf die lokale Platte
+- `prompt = True`: bei mehreren MusicBrainz-Treffern nachfragen
+- `keep_going = True`: nach einem endgültig nicht lesbaren Track mit den folgenden Tracks fortfahren
+- `max_retries = 2`: höchstens zwei vollständige Whipper-Versuche pro Track
+- `output_directory = ~/rip-local`: Ausgabe zunächst auf die lokale Platte
+- `track_template` und `disc_template`: unveränderte Verzeichnis- und Dateinamensstruktur
 
-`-r 0` darf nicht verwendet werden, da dies unbegrenzt viele Versuche bedeutet.
+Ein Retry-Wert von `0` darf nicht verwendet werden, da dies unbegrenzt viele Versuche bedeutet. Zusätzlich begrenzt der produktive `cd-paranoia`-Wrapper jeden einzelnen physischen Lesevorgang auf 30 Minuten.
 
 ### 3. Rip-Ergebnis prüfen
 
@@ -603,21 +625,17 @@ Eine geringere Geschwindigkeit kann helfen, ist aber keine Garantie. Wenn das La
 
 Problematische CDs werden mit einem Laufwerk anderer Bauart und eines anderen Herstellers getestet.
 
-Bevorzugt gesucht wird:
+Als zweites Laufwerk wurde inzwischen ein vollformatiges **Toshiba Samsung / TSSTcorp SH-216DB** beschafft. Damit steht neben dem vorhandenen Slim-/USB-Laufwerk eine deutlich andere Laufwerksmechanik für Gegenproben zur Verfügung.
 
-- vollformatiges internes **5,25-Zoll-SATA-Laufwerk**
-- Schublade statt Slot-in
-- andere Laufwerksfamilie als das vorhandene Slim-Blu-ray-Laufwerk
-- bei externem Betrieb ein Gehäuse mit eigenem Netzteil
+Auch das SH-216DB kann bei stark beschädigten CDs lange an einem Bereich arbeiten. Bei einem Test hing Whipper fast einen ganzen Tag bei:
 
-Interessante gebrauchte Modellreihen:
+```text
+Verifying track 13 of 18 (3 of 9) ... 78 %
+```
 
-1. `HL-DT-ST / LG BH14NS48`
-2. `ASUS BC-12B1ST`
-3. `Lite-On iHAS224 B` – auf Hardware-Revision `B` achten
-4. `TSSTcorp SH-216DB`
+Damit ist bestätigt, dass nicht nur der erste Lesevorgang (`Reading`, Schritt 1 von 9), sondern auch der zweite physische Lesevorgang zur Verifikation (`Verifying`, Schritt 3 von 9) festhängen kann. Deshalb gilt der 30-Minuten-Timeout für **jeden** `cd-paranoia`-Aufruf unabhängig davon, ob gerade gelesen oder verifiziert wird.
 
-Diese Modelle sind Beispiele, keine Garantie für jede beschädigte CD. Unterschiedliche Laufwerksmechaniken sind wichtiger als der Kauf eines möglichst teuren Einzelgeräts.
+Weitere alternative Laufwerksfamilien bleiben mögliche spätere Gegenproben, falls das Verbatim-Laufwerk und das SH-216DB bei derselben CD beide scheitern. Unterschiedliche Laufwerksmechaniken sind wichtiger als der Kauf eines möglichst teuren Einzelgeräts.
 
 ### 5. Entscheidung nach dem Vergleich
 
@@ -685,41 +703,63 @@ AppArmor-Meldungen des Profils `snap.fing-agent.fingagent` betreffen den Fing Ag
 
 ---
 
-## Optionaler cd-paranoia-Timeout
+## Produktiver cd-paranoia-Timeout
 
-Whipper 0.10.0 besitzt keinen eigenen Timeout für einen einzelnen Lesevorgang. Ein Wrapper kann verhindern, dass ein Track unbegrenzt lange gelesen wird.
+Whipper 0.10.0 besitzt keinen eigenen Timeout für einen einzelnen Lesevorgang. Der Wrapper ist inzwischen **produktiv eingerichtet**, nachdem sowohl beim ersten Lesen als auch beim Verifikationsdurchlauf stundenlange Hänger beobachtet wurden.
 
-Der Wrapper ist derzeit **noch nicht produktiv eingerichtet** und bleibt ein späterer optionaler Verbesserungspunkt.
+Datei:
 
-Beispiel:
+```text
+$HOME/.local/libexec/whipper/cd-paranoia
+```
+
+Inhalt:
 
 ```bash
-mkdir -p "$HOME/.local/libexec/whipper"
-
-cat > "$HOME/.local/libexec/whipper/cd-paranoia" <<'WRAPPER'
 #!/usr/bin/env bash
 
 exec /usr/bin/timeout \
   --signal=INT \
-  --kill-after=20s \
+  --kill-after=30s \
   30m \
   /usr/bin/cd-paranoia "$@"
-WRAPPER
-
-chmod +x "$HOME/.local/libexec/whipper/cd-paranoia"
 ```
 
-Whipper mit Wrapper:
+Der Wrapper begrenzt **jeden einzelnen `cd-paranoia`-Aufruf auf 30 Minuten**. Das betrifft sowohl den ersten physischen Read (`Reading`, Schritt 1 von 9) als auch den zweiten Read zur Verifikation (`Verifying`, Schritt 3 von 9).
+
+Damit Whipper den Wrapper automatisch findet, steht in `~/.profile`:
 
 ```bash
-PATH="$HOME/.local/libexec/whipper:$PATH" \
-  whipper cd rip -p -k -r 2 \
-    -O "$HOME/rip-local" \
-    --track-template "%A/%d/%t - %n" \
-    --disc-template "%A/%d/%A - %d"
+export PATH="$HOME/.local/libexec/whipper:$PATH"
 ```
 
-Der Wrapper verbessert nicht die Lesbarkeit. Er setzt nur eine Obergrenze pro cd-paranoia-Aufruf. Ein Prozess im Kernelstatus `D` kann erst beendet werden, wenn die aktuell laufende Geräteanforderung zum Kernel zurückkehrt.
+Nach einer neuen Anmeldung beziehungsweise für die aktuelle Shell nach:
+
+```bash
+source ~/.profile
+```
+
+kann die aktive Auflösung geprüft werden:
+
+```bash
+which cd-paranoia
+```
+
+Erwartet wird:
+
+```text
+/home/<BENUTZER>/.local/libexec/whipper/cd-paranoia
+```
+
+Der normale Whipper-Aufruf bleibt dadurch kurz:
+
+```bash
+whipper cd rip
+```
+
+Der Wrapper verbessert nicht die Lesbarkeit der CD. Er verhindert lediglich, dass ein einzelner physischer Leseversuch unbegrenzt läuft. Nach einem Timeout bewertet Whipper den Versuch als fehlgeschlagen; durch `max_retries = 2` und `keep_going = True` wird höchstens ein weiterer vollständiger Whipper-Versuch gestartet und danach gegebenenfalls mit dem nächsten Track fortgefahren.
+
+Ein Prozess im Kernelstatus `D` kann trotz Timeout erst beendet werden, wenn die aktuell laufende Geräteanforderung zum Kernel zurückkehrt.
 
 ---
 
@@ -882,7 +922,8 @@ dpkg -l 'libcdio-paranoia*'
 
 ### Whipper 0.10.0
 
-- Whipper wartet auf den gestarteten cd-paranoia-Prozess und besitzt keinen eigenen Timeout pro Track.
+- Whipper besitzt keinen eigenen Timeout pro physischem `cd-paranoia`-Lesevorgang; dies wird produktiv durch den lokalen 30-Minuten-Wrapper abgefangen.
+- Ein Hänger kann sowohl beim ersten Read (`Reading`, 1 von 9) als auch beim zweiten Read zur Verifikation (`Verifying`, 3 von 9) auftreten.
 - Nach fehlgeschlagenen Tracks kann Whipper beim Schreiben des Abschlusslogs mit einem `NoneType`-Fehler abbrechen.
 - Ein solcher Logger-Absturz ist ein Folgefehler und beweist nicht, dass zuvor erfolgreich erzeugte Tracks beschädigt sind.
 - Umgekehrt beweist ein normaler Programmabschluss nicht allein, dass alle Tracks vollständig und verifiziert sind.
@@ -940,20 +981,21 @@ Migration nur kontrolliert durchführen:
 6. Anzahl und Stichproben der Beets-Einträge prüfen.
 7. Erst danach entscheiden, ob `musictemp` vollständig entfallen kann.
 
-### 2. Gebrauchtes vollformatiges CD-/DVD-Laufwerk beschaffen
+### 2. SH-216DB vollständig kalibrieren und dokumentieren
 
-Gesucht wird ein 5,25-Zoll-SATA-Laufwerk anderer Bauart als das vorhandene Slim-Blu-ray-Laufwerk. Es dient als zusätzlicher Fehlerleser für beschädigte Bibliotheks-CDs.
+Der Kauf eines zweiten vollformatigen Laufwerks ist erledigt: Ein **Toshiba Samsung / TSSTcorp SH-216DB** ist vorhanden und wird produktiv getestet.
 
-Interessante Modelle:
+Noch festzuhalten beziehungsweise zu prüfen:
 
-- `HL-DT-ST / LG BH14NS48`
-- `ASUS BC-12B1ST`
-- `Lite-On iHAS224 B`
-- `TSSTcorp SH-216DB`
+- Ausgabe von `whipper drive list`
+- Cache-Verhalten mit `whipper drive analyze`
+- laufwerksspezifischen Read-Offset verifizieren und in `whipper.conf` dokumentieren
+- einige bekannte AccurateRip-CDs als Gegenprobe rippen
+- Verhalten des SH-216DB bei Problem-CDs mit dem Verbatim-Laufwerk vergleichen
 
-### 3. Optionalen cd-paranoia-Timeout entscheiden
+### 3. Timeout-Wert beobachten
 
-Der Wrapper ist dokumentiert, aber noch nicht produktiv. Er wird eingerichtet, wenn stundenlange Hänger trotz manuellem Eingreifen weiterhin häufig vorkommen.
+Der `cd-paranoia`-Wrapper ist inzwischen produktiv und begrenzt jeden einzelnen Lesevorgang auf 30 Minuten. Der Wert bleibt zunächst ein Praxiswert. Nach mehreren Problem-CDs prüfen, ob 30 Minuten sinnvoll sind oder angepasst werden sollten.
 
 ### 4. Beets-Upgrade prüfen
 
@@ -992,6 +1034,8 @@ Rip prüfen → Albumordner nach /mnt/nas/musicincome verschieben
 - Polling und eine klare Ordnerlogik sind robuster als Event-Watching auf NAS-Mounts.
 - Bibliotheks-CDs können in einzelnen Bereichen physisch nicht reproduzierbar lesbar sein.
 - Ein zweites Laufwerk mit anderer Mechanik ist bei Problem-CDs oft wirksamer als weitere Softwareoptionen.
+- Auch der Verifikationsdurchlauf (`Verifying`, 3 von 9) kann stundenlang hängen; ein Timeout muss deshalb jeden `cd-paranoia`-Aufruf umfassen, nicht nur den ersten Read.
+- Ein produktiver 30-Minuten-Wrapper begrenzt den Zeitaufwand eines einzelnen physischen Leseversuchs, ohne die Qualitätsprüfung von Whipper grundsätzlich zu ersetzen.
 - AAC nach FLAC zu konvertieren macht die ursprüngliche verlustbehaftete Kompression nicht rückgängig.
 
 ---
